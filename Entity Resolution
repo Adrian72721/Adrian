@@ -1,0 +1,78 @@
+CREATE  TABLE companies (
+    company_name TEXT,
+    company_legal_names TEXT,
+    company_commercial_names TEXT,
+    main_country_code TEXT,
+    main_country TEXT,
+    website_domain TEXT,
+    created_at TIMESTAMP,
+    last_updated_at TIMESTAMP
+);
+
+-- Identificarea companiilor unice bazate pe domeniul website-ului
+-- Domeniul website-ului este un bun identificator unic pentru o companie
+WITH unique_companies AS (
+    SELECT 
+        MIN(company_name) AS canonical_name,
+        company_legal_names,
+        STRING_AGG(DISTINCT company_commercial_names, ' | ') AS all_commercial_names,
+        website_domain,
+        main_country_code,
+        main_country,
+        MIN(created_at) AS first_created,
+        MAX(last_updated_at) AS last_updated
+    FROM 
+        companies
+    WHERE 
+        website_domain IS NOT NULL
+    GROUP BY 
+        website_domain, company_legal_names, main_country_code, main_country
+)
+
+-- Rezultatul final cu companiile deduplicate
+SELECT 
+    ROW_NUMBER() OVER () AS company_id,
+    canonical_name AS company_name,
+    company_legal_names,
+    all_commercial_names AS company_commercial_names,
+    main_country_code,
+    main_country,
+    website_domain,
+    first_created AS created_at,
+    last_updated AS last_updated_at
+FROM 
+    unique_companies
+ORDER BY 
+    canonical_name;
+
+--pentru cazurile fara website
+
+WITH companies_with_website AS (
+    -- Companiile cu website 
+    SELECT * FROM companies WHERE website_domain IS NOT NULL
+),
+
+companies_without_website AS (
+    -- Companiile fără website - folosim nume legal si tara
+    SELECT 
+        MIN(company_name) AS canonical_name,
+        company_legal_names,
+        STRING_AGG(DISTINCT company_commercial_names, ' | ') AS all_commercial_names,
+        NULL AS website_domain,
+        main_country_code,
+        main_country,
+        MIN(created_at) AS first_created,
+        MAX(last_updated_at) AS last_updated
+    FROM 
+        companies
+    WHERE 
+        website_domain IS NULL
+        AND company_legal_names IS NOT NULL
+    GROUP BY 
+        company_legal_names, main_country_code, main_country
+)
+
+-- Combinăm rezultatele
+SELECT * FROM companies_with_website
+UNION ALL
+SELECT * FROM companies_without_website;
